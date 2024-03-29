@@ -6,7 +6,7 @@ Demo project shows interaction with two neural models: text-generative and text-
 
 [Youtube Video](https://youtu.be/aI2wegZCW0Y)
 
-I used [text-generation-webui](https://github.com/oobabooga/text-generation-webui) of  to run [this model](https://huggingface.co/TheBloke/Wizard-Vicuna-13B-Uncensored-GPTQ) and [this fork](https://github.com/daswer123/xtts-finetune-webui) of coqui TTS. Demo project also uses [Runtime AUdio Importer](https://unrealengine.com/marketplace/product/runtime-audio-importer) plugins (it's free on Unreal Marketplace).
+I used [text-generation-webui](https://github.com/oobabooga/text-generation-webui) to run [this model](https://huggingface.co/TheBloke/Wizard-Vicuna-13B-Uncensored-GPTQ) and [this fork](https://github.com/daswer123/xtts-finetune-webui) of coqui TTS. Demo project also uses [Runtime AUdio Importer](https://unrealengine.com/marketplace/product/runtime-audio-importer) plugins (it's free on Unreal Marketplace).
 
 # How to use
 
