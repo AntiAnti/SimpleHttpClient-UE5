@@ -4,7 +4,7 @@ This is very lightweight plugin to send HTTP requests and parse JSON in bluerpin
 
 Demo project shows interaction with two neural models: text-generative and text-to-speech.
 
-https://youtu.be/aI2wegZCW0Y
+[youtube](https://youtu.be/aI2wegZCW0Y)
 
 I used [text-generation-webui](https://github.com/oobabooga/text-generation-webui) of  to run [this model](https://huggingface.co/TheBloke/Wizard-Vicuna-13B-Uncensored-GPTQ) and [this fork](https://github.com/daswer123/xtts-finetune-webui) of coqui TTS. Demo project also uses [Runtime AUdio Importer](https://unrealengine.com/marketplace/product/runtime-audio-importer) plugins (it's free on Unreal Marketplace).
 
@@ -32,10 +32,10 @@ For exmaple, standard OpenAI request looks like this:
 
 Path to user content is messages[role="user"].content (quotes are optional).
 
-!(docs/readme01.jpg)
+![FJsonItem::SetStringField](docs/readme01.jpg)
 
 To send HTTP requests, use HTTPSubsystem. It has three useful events OnTextResponse, OnDataResponse and OnResponseError and simple function HTTPRequest.
 
-!(docs/readme03.jpg)
+![UHTTPSubsystem::OnDataResponse](docs/readme03.jpg)
 
-!(docs/readme02.jpg)
+![UHTTPSubsystem::HTTPRequest](docs/readme02.jpg)
