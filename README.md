@@ -10,7 +10,7 @@ I used [text-generation-webui](https://github.com/oobabooga/text-generation-webu
 
 # How to use
 
-Json parser starts with two global functions: "Json from File" and "Json from String". After you created JsonItem variable, read or write any item using SetBooleanValue, SetNumericValue, SetStringValue and GetBooleanValue, GetNumericValue, GetStringValue. Allthese functions require path, with consists of hierarchy of json objects separated by dot (.) symbol. For arrays use square brackets with element index or name of a field inside.
+Json parser starts with two global functions: "Json from File" and "Json from String". After you created JsonItem variable, read or write any item using SetBooleanField, SetNumericField, SetStringField and GetBooleanField, GetNumericField, GetStringField. All these functions require path, with consists of hierarchy of json objects separated by dot (.) symbol. For arrays use square brackets with element index or name of a field inside.
 
 For exmaple, standard OpenAI request looks like this:
 
@@ -24,7 +24,7 @@ For exmaple, standard OpenAI request looks like this:
       {
         "role": "system",
         "content": "Answer in rhyme."
-      },
+      }
     ],
     "mode": "chat"
   }
