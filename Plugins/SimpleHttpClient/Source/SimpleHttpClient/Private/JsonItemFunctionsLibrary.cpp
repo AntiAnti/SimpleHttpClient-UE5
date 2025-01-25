@@ -72,3 +72,23 @@ FYnnkUrlParameter UJsonItemFunctionsLibrary::GetDefaultContentWav()
 {
 	return FYnnkUrlParameter("Content-Type", "audio/wav");
 }
+
+FYnnkUrlParameter UJsonItemFunctionsLibrary::GetDefaultContentHtml()
+{
+	return FYnnkUrlParameter("Content-Type", "text/html");
+}
+
+FString UJsonItemFunctionsLibrary::CleanJsonResponse(const FString& InText)
+{
+	bool bStartsWtihData = InText.StartsWith(TEXT("data: {")) || InText.StartsWith(TEXT("data:{"));
+	bool bEndsWithBracket = InText.TrimEnd().EndsWith(TEXT("}")) || InText.EndsWith(TEXT("}\n")) || InText.EndsWith(TEXT("}\r\n"));
+	if (bStartsWtihData && bEndsWithBracket)
+	{
+		int32 Ind = InText.Find("{");
+		return InText.RightChop(Ind);
+	}
+	else
+	{
+		return InText;
+	}
+}

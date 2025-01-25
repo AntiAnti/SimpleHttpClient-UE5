@@ -54,5 +54,11 @@ public:
 	UFUNCTION(BlueprintPure, meta = (DisplayName = "Content-type: audio/wav"), Category = "Json")
 	static FYnnkUrlParameter GetDefaultContentWav();
 
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "Content-type: text/html"), Category = "Json")
+	static FYnnkUrlParameter GetDefaultContentHtml();
+
+	UFUNCTION(BlueprintPure, Category = "Json")
+	static FString CleanJsonResponse(const FString& InText);
+
 private:
 };

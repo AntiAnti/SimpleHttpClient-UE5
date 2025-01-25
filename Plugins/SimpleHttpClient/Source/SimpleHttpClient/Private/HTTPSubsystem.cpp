@@ -6,12 +6,23 @@
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Runtime/Launch/Resources/Version.h"
+#include "Misc/FileHelper.h"
+#include "JsonItemFunctionsLibrary.h"
+//#include "Async/Future.h"
+#include "Async/Async.h"
 
-bool UHTTPSubsystem::SendHttpRequest(FName Keyword, FString URL, ERequestMethod Verb, const TArray<FYnnkUrlParameter>& HeaderParams, const FString& Body)
+bool UHTTPSubsystem::SendHttpRequestInternal(FName Keyword, FString URL, ERequestMethod Verb, const TArray<FYnnkUrlParameter>& HeaderParams, const FString& BodyString, const TArray<uint8>& BodyData, EExpectedResponseType ExpectedResponseFormat)
 {
 	const FString SendMethod = (Verb == ERequestMethod::Get ? TEXT("GET") : TEXT("POST"));
 
 	int32 RequestId = INDEX_NONE, MaxId = INDEX_NONE;
+	for (auto& Req : HttpRequests)
+	{
+		if (!Req.Value.HttpRequest.IsValid())
+		{
+			Req.Value.TempBinaryData.Empty();
+		}
+	}
 	for (const auto& Req : HttpRequests)
 	{
 		MaxId = FMath::Max(Req.Key, MaxId);
@@ -28,13 +39,16 @@ bool UHTTPSubsystem::SendHttpRequest(FName Keyword, FString URL, ERequestMethod 
 	}
 
 	HttpRequests[RequestId].Name = Keyword;
+	HttpRequests[RequestId].ResponseFormat = ExpectedResponseFormat;
 
-#if ENGINE_MINOR_VERSION > 2
-	if (!OnAudioChunkReceived.IsBound())
+	if (!OnStreamChunkReceived.IsBound())
 	{
-		OnAudioChunkReceived.BindUObject(this, &UHTTPSubsystem::AudioChunkReceivedWrapper);
-	}
+#if ENGINE_MINOR_VERSION > 4
+		OnStreamChunkReceived.BindUObject(this, &UHTTPSubsystem::StreamChunkReceivedWrapperV2);
+#elif ENGINE_MINOR_VERSION > 2
+		OnStreamChunkReceived.BindUObject(this, &UHTTPSubsystem::StreamChunkReceivedWrapper);
 #endif
+	}
 
 	auto& HttpRequest = HttpRequests[RequestId].HttpRequest;
 	HttpRequest = FHttpModule::Get().CreateRequest();
@@ -52,19 +66,50 @@ bool UHTTPSubsystem::SendHttpRequest(FName Keyword, FString URL, ERequestMethod 
 		HttpRequest->SetHeader(Param.Name, Param.Value);
 	}
 
+	bool bContentIsString = BodyString != TEXT("!!NULL") && !BodyString.IsEmpty();
+
 	if (!bContentTypeSpecified)
 	{
-		HttpRequest->SetHeader("Content-Type", "application/json");
+		if (bContentIsString)
+		{
+			HttpRequest->SetHeader("Content-Type", "application/json");
+		}
+		else
+		{
+			HttpRequest->SetHeader("Content-Type", "audio/wav");
+		}
 	}
 
-	if (!Body.IsEmpty())
+	if (bContentIsString)
 	{
-		HttpRequest->SetContentAsString(Body);
+		HttpRequest->SetContentAsString(BodyString);
+	}
+	else
+	{
+		HttpRequest->SetContent(BodyData);
 	}
 
 	HttpRequest->OnProcessRequestComplete().BindUObject(this, &UHTTPSubsystem::OnHTTPRequestComplete, RequestId);
-	//HttpRequest->SetResponseBodyReceiveStreamDelegate(OnAudioChunkReceived);
+	if (HttpRequests[RequestId].FormatStream())
+	{
+#if ENGINE_MINOR_VERSION > 4
+		HttpRequest->SetResponseBodyReceiveStreamDelegateV2(OnStreamChunkReceived);
+#elif ENGINE_MINOR_VERSION > 2
+		HttpRequest->SetResponseBodyReceiveStreamDelegate(OnStreamChunkReceived);
+#endif
+		LastRequest = RequestId;
+	}
 	return HttpRequest->ProcessRequest();
+}
+
+bool UHTTPSubsystem::SendHttpRequest(FName Keyword, FString URL, ERequestMethod Verb, const TArray<FYnnkUrlParameter>& HeaderParams, const FString& BodyString, EExpectedResponseType ExpectedResponseFormat)
+{
+	return SendHttpRequestInternal(Keyword, URL, Verb, HeaderParams, BodyString, {}, ExpectedResponseFormat);
+}
+
+bool UHTTPSubsystem::SendHttpRequestData(FName Keyword, FString URL, ERequestMethod Verb, const TArray<FYnnkUrlParameter>& HeaderParams, const TArray<uint8>& BodyData, EExpectedResponseType ExpectedResponseFormat)
+{
+	return SendHttpRequestInternal(Keyword, URL, Verb, HeaderParams, TEXT("!!NULL"), BodyData, ExpectedResponseFormat);
 }
 
 void UHTTPSubsystem::Deinitialize()
@@ -80,7 +125,7 @@ void UHTTPSubsystem::Deinitialize()
 		}
 	}
 #if ENGINE_MINOR_VERSION > 2
-	OnAudioChunkReceived.Unbind();
+	OnStreamChunkReceived.Unbind();
 #endif
 }
 
@@ -95,11 +140,11 @@ void UHTTPSubsystem::OnHTTPRequestComplete(FHttpRequestPtr Request, FHttpRespons
 	TArray<FString> Headers = RequestResponse->GetAllHeaders();
 	UE_LOG(LogTemp, Log, TEXT("HTTP-request returned audio data of type: %s. Length = %d"), *Type, RequestResponse->GetContentLength());
 
-	if (Type.Contains(TEXT("audio/")))
+	if (Type.Contains(TEXT("audio/")) || HttpRequests[ReqId].FormatAudio())
 	{
 		OnDataRequestCompleted(ReqId, RequestResponse->GetContent(), Headers, RequestResponse->GetResponseCode(), bWasSuccessful);
 	}
-	else if (Type.Contains(TEXT("application/json")))
+	else if (Type.Contains(TEXT("application/json")) || Type.StartsWith("text/") || HttpRequests[ReqId].FormatText())
 	{
 		UE_LOG(LogTemp, Log, TEXT("%s"), *RequestResponse->GetContentAsString());
 		OnStringRequestCompleted(ReqId, RequestResponse->GetContentAsString(), Headers, RequestResponse->GetResponseCode(), bWasSuccessful);
@@ -115,14 +160,75 @@ void UHTTPSubsystem::OnHTTPRequestComplete(FHttpRequestPtr Request, FHttpRespons
 		{
 			HttpRequests[ReqId].HttpRequest->OnProcessRequestComplete().Unbind();
 			HttpRequests[ReqId].HttpRequest = nullptr;
+			LastRequest = INDEX_NONE;
 		}
 	}
 }
 
-bool UHTTPSubsystem::AudioChunkReceivedWrapper(void* Ptr, int64 Length)
+bool UHTTPSubsystem::StreamChunkReceivedWrapper(void* Ptr, int64 Length)
 {
-	UE_LOG(LogTemp, Log, TEXT("AudioChunkReceivedWrapper: %d bytes received"), Length);
+	UE_LOG(LogTemp, Log, TEXT("StreamChunkReceivedWrapper: %d bytes received"), Length);
+
+	if (HttpRequests.Contains(LastRequest) && Length > 0)
+	{
+		auto& Req = HttpRequests[LastRequest];
+
+		Req.TempBinaryData.SetNum(Length);
+		FMemory::Memcpy(Req.TempBinaryData.GetData(), Ptr, Length);
+
+		if (Req.FormatText())
+		{
+			FFileHelper::BufferToString(Req.TempStringData, Req.TempBinaryData.GetData(), Length);
+			Req.TempStringData = UJsonItemFunctionsLibrary::CleanJsonResponse(Req.TempStringData);
+
+			if (bResponseInGameThread && !IsInGameThread())
+			{
+				AsyncTask(ENamedThreads::GameThread, [this, ReqId = LastRequest, strDat = Req.TempStringData]()
+				{
+					if (HttpRequests.Contains(ReqId))
+					{
+						OnTextStreamResponse.Broadcast(HttpRequests[ReqId].Name, HttpRequests[ReqId].TempStringData);
+					}
+					else
+					{
+						OnTextStreamResponse.Broadcast(TEXT("Default"), strDat);
+					}
+				});
+			}
+			else
+			{
+				OnTextStreamResponse.Broadcast(Req.Name, Req.TempStringData);
+			}
+		}
+		else
+		{
+			if (bResponseInGameThread && !IsInGameThread())
+			{
+				AsyncTask(ENamedThreads::GameThread, [this, ReqId = LastRequest]()
+				{
+					if (HttpRequests.Contains(ReqId))
+					{
+						OnDataStreamResponse.Broadcast(HttpRequests[ReqId].Name, HttpRequests[ReqId].TempBinaryData);
+					}
+					else
+					{
+						OnDataStreamResponse.Broadcast(TEXT("Default_ERROR"), {});
+					}
+				});
+			}
+			else
+			{
+				OnDataStreamResponse.Broadcast(Req.Name, Req.TempBinaryData);
+			}
+		}
+	}
+
 	return (Ptr != NULL && Length > 0);
+}
+
+void UHTTPSubsystem::StreamChunkReceivedWrapperV2(void* Ptr, int64& InOutLength)
+{
+	StreamChunkReceivedWrapper(Ptr, InOutLength);
 }
 
 void UHTTPSubsystem::OnStringRequestCompleted(int32 ReqId, const FString Content, const TArray<FString>& Headers, const int32 ResponseCode, const bool bWasSuccessful)
@@ -131,12 +237,31 @@ void UHTTPSubsystem::OnStringRequestCompleted(int32 ReqId, const FString Content
 
 	if (bWasSuccessful)
 	{
-		//UE_LOG(LogTemp, Log, TEXT("OnTextResponse(%s)"), *Content);
-		OnTextResponse.Broadcast(Keyword, ResponseCode, Headers, Content);
+		if (bResponseInGameThread && !IsInGameThread())
+		{
+			AsyncTask(ENamedThreads::GameThread, [this, Keyword, ResponseCode, Headers, Content]()
+			{
+				OnTextResponse.Broadcast(Keyword, ResponseCode, Headers, Content);
+			});
+		}
+		else
+		{
+			OnTextResponse.Broadcast(Keyword, ResponseCode, Headers, Content);
+		}
 	}
 	else
 	{
-		OnResponseError.Broadcast(Keyword, ResponseCode);
+		if (bResponseInGameThread && !IsInGameThread())
+		{
+			AsyncTask(ENamedThreads::GameThread, [this, Keyword, ResponseCode]()
+			{
+					OnResponseError.Broadcast(Keyword, ResponseCode);
+			});
+		}
+		else
+		{
+			OnResponseError.Broadcast(Keyword, ResponseCode);
+		}
 	}
 }
 
@@ -146,12 +271,32 @@ void UHTTPSubsystem::OnDataRequestCompleted(int32 ReqId, const TArray<uint8>& Co
 
 	if (bWasSuccessful)
 	{
-		DataBuffer.SetNumUninitialized(Content.Num());
+		DataBuffer.SetNum(Content.Num());
 		FMemory::Memcpy(DataBuffer.GetData(), Content.GetData(), DataBuffer.Num());
-		OnDataResponse.Broadcast(Keyword, ResponseCode, Headers, DataBuffer);
+		if (bResponseInGameThread && !IsInGameThread())
+		{
+			AsyncTask(ENamedThreads::GameThread, [this, Keyword, ResponseCode, Headers]()
+			{
+				OnDataResponse.Broadcast(Keyword, ResponseCode, Headers, DataBuffer);
+			});
+		}
+		else
+		{
+			OnDataResponse.Broadcast(Keyword, ResponseCode, Headers, DataBuffer);
+		}
 	}
 	else
 	{
-		OnResponseError.Broadcast(Keyword, ResponseCode);
+		if (bResponseInGameThread && !IsInGameThread())
+		{
+			AsyncTask(ENamedThreads::GameThread, [this, Keyword, ResponseCode]()
+			{
+				OnResponseError.Broadcast(Keyword, ResponseCode);
+			});
+		}
+		else
+		{
+			OnResponseError.Broadcast(Keyword, ResponseCode);
+		}
 	}
 }

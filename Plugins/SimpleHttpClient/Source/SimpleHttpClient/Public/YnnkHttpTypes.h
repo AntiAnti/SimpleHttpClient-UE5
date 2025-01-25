@@ -19,9 +19,20 @@
 UENUM(BlueprintType)
 enum class ERequestMethod : uint8
 {
-	Get		UMETA(DisplayName = "GET"),
-	Post	UMETA(DisplayName = "POST")
+	Get			UMETA(DisplayName = "GET"),
+	Post		UMETA(DisplayName = "POST")
 };
+
+UENUM(BlueprintType)
+enum class EExpectedResponseType : uint8
+{
+	Default		UMETA(DisplayName = "Auto"),
+	Text		UMETA(DisplayName = "Text"),
+	Data		UMETA(DisplayName = "Binary Data"),
+	StreamText	UMETA(DisplayName = "Text Stream"),
+	StreamData	UMETA(DisplayName = "Data Stream")
+};
+
 
 /**
 * Http-request header parameters
