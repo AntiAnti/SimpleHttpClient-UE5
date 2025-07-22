@@ -36,6 +36,22 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Set Boolean Field"), Category = "Json")
 	static bool JsonSetFieldValue_Bool(UPARAM(Ref) FJsonItem& JsonItem, FString Path, bool Value);
 
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Add Array Item (Object)"), Category = "Json")
+	static bool JsonAddArrayItem(UPARAM(Ref) FJsonItem& JsonItem, FString Path, const FJsonItem& NewItem);
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Add Array Item (String)"), Category = "Json")
+	static bool JsonAddArrayItemString(UPARAM(Ref) FJsonItem& JsonItem, FString Path, FString NewItem);
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Add Array Item (Numeric)"), Category = "Json")
+	static bool JsonAddArrayItemNumeric(UPARAM(Ref) FJsonItem& JsonItem, FString Path, float NewItem);
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Add Array Item (Boolean)"), Category = "Json")
+	static bool JsonAddArrayItemBool(UPARAM(Ref) FJsonItem& JsonItem, FString Path, bool NewItem);
+
+	// Find valid json block wrapped with {} in some text and return it as JsonItem struct
+	UFUNCTION(BlueprintPure, Category = "Json")
+	static bool ExtractJsonBlockFromString(const FString& InText, int32 SearchStart, int32& OutStartPos, int32& OutBlockLen, FJsonItem& OutJson);
+
 	UFUNCTION(BlueprintPure, meta = (DisplayName = "Get String Field"), Category = "Json")
 	static FString JsonGetFieldValue_String(const FJsonItem& JsonItem, FString Path);
 

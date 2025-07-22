@@ -138,19 +138,23 @@ void UHTTPSubsystem::OnHTTPRequestComplete(FHttpRequestPtr Request, FHttpRespons
 
 	FString Type = RequestResponse->GetContentType();
 	TArray<FString> Headers = RequestResponse->GetAllHeaders();
-	UE_LOG(LogTemp, Log, TEXT("HTTP-request returned audio data of type: %s. Length = %d"), *Type, RequestResponse->GetContentLength());
 
 	if (Type.Contains(TEXT("audio/")) || HttpRequests[ReqId].FormatAudio())
 	{
+		UE_LOG(LogTemp, Log, TEXT("HTTP-request returned data of type: %s (binary). Length = %d"), *Type, RequestResponse->GetContentLength());
 		OnDataRequestCompleted(ReqId, RequestResponse->GetContent(), Headers, RequestResponse->GetResponseCode(), bWasSuccessful);
 	}
 	else if (Type.Contains(TEXT("application/json")) || Type.StartsWith("text/") || HttpRequests[ReqId].FormatText())
 	{
-		UE_LOG(LogTemp, Log, TEXT("%s"), *RequestResponse->GetContentAsString());
+		UE_LOG(LogTemp, Log, TEXT("HTTP-request returned data of type: %s (text). Length = %d"), *Type, RequestResponse->GetContentLength());
+		StringBuffer = RequestResponse->GetContentAsString();
+
+		UE_LOG(LogTemp, Log, TEXT("To remove: [%s]"), *StringBuffer);
 		OnStringRequestCompleted(ReqId, RequestResponse->GetContentAsString(), Headers, RequestResponse->GetResponseCode(), bWasSuccessful);
 	}
 	else
 	{
+		UE_LOG(LogTemp, Log, TEXT("HTTP-request returned data of type: %s (unknown). Length = %d"), *Type, RequestResponse->GetContentLength());
 		OnStringRequestCompleted(ReqId, RequestResponse->GetContentAsString(), Headers, RequestResponse->GetResponseCode(), bWasSuccessful);
 	}
 
@@ -167,8 +171,6 @@ void UHTTPSubsystem::OnHTTPRequestComplete(FHttpRequestPtr Request, FHttpRespons
 
 bool UHTTPSubsystem::StreamChunkReceivedWrapper(void* Ptr, int64 Length)
 {
-	UE_LOG(LogTemp, Log, TEXT("StreamChunkReceivedWrapper: %d bytes received"), Length);
-
 	if (HttpRequests.Contains(LastRequest) && Length > 0)
 	{
 		auto& Req = HttpRequests[LastRequest];
@@ -239,9 +241,10 @@ void UHTTPSubsystem::OnStringRequestCompleted(int32 ReqId, const FString Content
 	{
 		if (bResponseInGameThread && !IsInGameThread())
 		{
-			AsyncTask(ENamedThreads::GameThread, [this, Keyword, ResponseCode, Headers, Content]()
+			StringBuffer = Content;
+			AsyncTask(ENamedThreads::GameThread, [this, Keyword, ResponseCode, Headers]()
 			{
-				OnTextResponse.Broadcast(Keyword, ResponseCode, Headers, Content);
+				OnTextResponse.Broadcast(Keyword, ResponseCode, Headers, StringBuffer);
 			});
 		}
 		else
@@ -255,7 +258,7 @@ void UHTTPSubsystem::OnStringRequestCompleted(int32 ReqId, const FString Content
 		{
 			AsyncTask(ENamedThreads::GameThread, [this, Keyword, ResponseCode]()
 			{
-					OnResponseError.Broadcast(Keyword, ResponseCode);
+				OnResponseError.Broadcast(Keyword, ResponseCode);
 			});
 		}
 		else

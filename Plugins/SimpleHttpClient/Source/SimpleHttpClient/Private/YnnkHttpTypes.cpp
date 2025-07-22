@@ -44,6 +44,18 @@ bool FJsonItem::SetValue(FString Path, EJson Format, float ValueNumeric, const F
 
 	TSharedPtr<FJsonObject> Field = JsonResponse;
 
+	TArray<TSharedPtr<FJsonValue>> ArrayValue;
+	if (Format == EJson::Array)
+	{
+		TSharedPtr<FJsonObject> JsonArrItem = MakeShareable(new FJsonObject);
+		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(TEXT("{ \"root\": ") + ValueStr + TEXT("}")), JsonArrItem))
+		{
+			UE_LOG(LogTemp, Log, TEXT("FJsonItem::SetValue - invalid json input array"));
+			return false;
+		}
+		ArrayValue = JsonArrItem->GetArrayField(TEXT("root"));
+	}
+
 	if (PathParameters.Num() < 1)
 	{
 		UE_LOG(LogTemp, Log, TEXT("FJsonItem::SetValue - empty path"));
@@ -63,6 +75,10 @@ bool FJsonItem::SetValue(FString Path, EJson Format, float ValueNumeric, const F
 		else if (Format == EJson::Boolean)
 		{
 			NewValue = MakeShared<FJsonValueBoolean>(bValue);
+		}
+		else if (Format == EJson::Array)
+		{
+			NewValue = MakeShared<FJsonValueArray>(ArrayValue);
 		}
 		SetTargetValue(Field, PathParameters[0], NewValue);
 	}
@@ -89,6 +105,10 @@ bool FJsonItem::SetValue(FString Path, EJson Format, float ValueNumeric, const F
 		else if (Format == EJson::Boolean)
 		{
 			Field->SetBoolField(PathParameters.Last(), bValue);
+		}
+		else if (Format == EJson::Array)
+		{
+			Field->SetArrayField(PathParameters.Last(), ArrayValue);
 		}
 	}
 
@@ -251,13 +271,122 @@ bool FJsonItem::SetTargetValue(TSharedPtr<FJsonObject>& InParentObjectField, con
 	return false;
 }
 
+bool FJsonItem::AddArrayItem(const FString& Path, EJson Format, float ValueNumeric, const FString& ValueStr, bool bValue)
+{
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Body);
+	TSharedPtr<FJsonObject> JsonResponse = MakeShareable(new FJsonObject);
+	if (!FJsonSerializer::Deserialize(Reader, JsonResponse))
+	{
+		UE_LOG(LogTemp, Log, TEXT("FJsonItem::SetValue - invalid json body"));
+		return false;
+	}
+
+	TArray<FString> PathParameters;
+	Path.ParseIntoArray(PathParameters, TEXT("."));
+
+	TSharedPtr<FJsonObject> Field = JsonResponse;
+
+	TArray<TSharedPtr<FJsonValue>> ArrayValue;
+	TSharedPtr<FJsonObject> ObjectValue;
+	if (Format == EJson::Array)
+	{
+		TSharedPtr<FJsonObject> JsonArrItem = MakeShareable(new FJsonObject);
+		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(TEXT("{ \"root\": ") + ValueStr + TEXT("}")), JsonArrItem))
+		{
+			UE_LOG(LogTemp, Log, TEXT("FJsonItem::SetValue - invalid json input array"));
+			return false;
+		}
+		ArrayValue = JsonArrItem->GetArrayField(TEXT("root"));
+	}
+	else if (Format == EJson::Object)
+	{
+		ObjectValue = MakeShareable(new FJsonObject);
+		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ValueStr), ObjectValue))
+		{
+			UE_LOG(LogTemp, Log, TEXT("FJsonItem::SetValue - invalid json input array"));
+			return false;
+		}
+	}
+
+	if (PathParameters.Num() < 1)
+	{
+		UE_LOG(LogTemp, Log, TEXT("FJsonItem::SetValue - empty path"));
+		return false;
+	}
+	else if (PathParameters.Num() < 2)
+	{
+		if (Field->HasTypedField<EJson::Array>(PathParameters[0]))
+		{
+			auto ArrField = Field->GetArrayField(PathParameters[0]);
+			if (Format == EJson::String)
+			{
+				ArrField.Add(MakeShared<FJsonValueString>(ValueStr));
+			}
+			else if (Format == EJson::Number)
+			{
+				ArrField.Add(MakeShared<FJsonValueNumber>(ValueNumeric));
+			}
+			else if (Format == EJson::Boolean)
+			{
+				ArrField.Add(MakeShared<FJsonValueBoolean>(bValue));
+			}
+			else if (Format == EJson::Object)
+			{
+				ArrField.Add(MakeShared<FJsonValueObject>(ObjectValue));
+			}
+			Field->SetArrayField(PathParameters[0], ArrField);
+		}
+		else return false;
+	}
+	else
+	{
+		for (int32 i = 0; i < PathParameters.Num() - 1; i++)
+		{
+			TSharedPtr<FJsonObject> CurrField = Field;
+			if (!GetChildObjectByPath(CurrField, Field, PathParameters[i]))
+			{
+				return false;
+			}
+		}
+
+		if (Field->HasTypedField<EJson::Array>(PathParameters.Last()))
+		{
+			// finish?
+			auto ArrField = Field->GetArrayField(PathParameters.Last());
+			if (Format == EJson::String)
+			{
+				ArrField.Add(MakeShared<FJsonValueString>(ValueStr));
+			}
+			else if (Format == EJson::Number)
+			{
+				ArrField.Add(MakeShared<FJsonValueNumber>(ValueNumeric));
+			}
+			else if (Format == EJson::Boolean)
+			{
+				ArrField.Add(MakeShared<FJsonValueBoolean>(bValue));
+			}
+			else if (Format == EJson::Object)
+			{
+				ArrField.Add(MakeShared<FJsonValueObject>(ObjectValue));
+			}
+			Field->SetArrayField(PathParameters[0], ArrField);
+		}
+		else return false;
+	}
+
+	FString RequestContentString;
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestContentString);
+	FJsonSerializer::Serialize(JsonResponse.ToSharedRef(), Writer);
+
+	FromString(RequestContentString);
+	return IsValid();
+}
+
 bool FJsonItem::GetChildObjectByPath(TSharedPtr<FJsonObject>& InParentObjectField, TSharedPtr<FJsonObject>& OutChildObjectField, FString FieldNameAsPath) const
 {
 	FString ArrFieldName, ArrFieldValue;
 	bool bNumeric = false;
 	float NumVal = 0.f;
-
-	UE_LOG(LogTemp, Log, TEXT("GetChildObjectByPath: %s"), *FieldNameAsPath);
 
 	// array?
 	if (FieldNameAsPath.Right(1) == TEXT("]"))
@@ -272,7 +401,7 @@ bool FJsonItem::GetChildObjectByPath(TSharedPtr<FJsonObject>& InParentObjectFiel
 			// array[index]
 
 			int32 ArrIndex = FCString::Atoi(*b);
-			UE_LOG(LogTemp, Log, TEXT("looking for array field \"%s\" with index %d"), *FieldNameAsPath, ArrIndex);
+			//UE_LOG(LogTemp, Log, TEXT("looking for array field \"%s\" with index %d"), *FieldNameAsPath, ArrIndex);
 
 			TArray<TSharedPtr<FJsonValue>> Arr = InParentObjectField->GetArrayField(FieldNameAsPath);
 			if (Arr.IsValidIndex(ArrIndex))
@@ -304,7 +433,7 @@ bool FJsonItem::GetChildObjectByPath(TSharedPtr<FJsonObject>& InParentObjectFiel
 				bBoolValue = ArrFieldValue.Equals(TEXT("true"), ESearchCase::IgnoreCase);
 			}
 
-			UE_LOG(LogTemp, Log, TEXT(" looking for array %s with field %s = %s"), *FieldNameAsPath, *ArrFieldName, *ArrFieldValue);
+			//UE_LOG(LogTemp, Log, TEXT(" looking for array %s with field %s = %s"), *FieldNameAsPath, *ArrFieldName, *ArrFieldValue);
 
 			TArray<TSharedPtr<FJsonValue>> Arr = InParentObjectField->GetArrayField(FieldNameAsPath);
 			for (auto& ArrField : Arr)
@@ -316,7 +445,7 @@ bool FJsonItem::GetChildObjectByPath(TSharedPtr<FJsonObject>& InParentObjectFiel
 					float valFloat = f->Get()->HasTypedField<EJson::Number>(ArrFieldName) ? f->Get()->GetNumberField(ArrFieldName) : 0.f;
 					bool valBoolean = f->Get()->HasTypedField<EJson::Boolean>(ArrFieldName) ? f->Get()->GetBoolField(ArrFieldName) : false;
 
-					UE_LOG(LogTemp, Log, TEXT("checking numeric value: [%s] = [%f | %s], IsNumeric=%d"), *ArrFieldName, valFloat, *valStr, (int)bNumeric);
+					//UE_LOG(LogTemp, Log, TEXT("checking numeric value: [%s] = [%f | %s], IsNumeric=%d"), *ArrFieldName, valFloat, *valStr, (int)bNumeric);
 
 					if (bBoolean)
 					{
@@ -338,7 +467,7 @@ bool FJsonItem::GetChildObjectByPath(TSharedPtr<FJsonObject>& InParentObjectFiel
 					{
 						if (valStr == ArrFieldValue)
 						{
-							UE_LOG(LogTemp, Log, TEXT("Item found"));
+							//UE_LOG(LogTemp, Log, TEXT("Item found"));
 							OutChildObjectField = ArrField->AsObject();
 							return true;
 						}

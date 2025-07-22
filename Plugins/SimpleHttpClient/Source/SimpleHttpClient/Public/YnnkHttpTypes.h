@@ -142,6 +142,8 @@ protected:
 	bool GetChildObjectByPath(TSharedPtr<FJsonObject>& InParentObjectField, TSharedPtr<FJsonObject>& OutChildObjectField, FString FieldNameAsPath) const;
 	bool SetTargetValue(TSharedPtr<FJsonObject>& InParentObjectField, const FString& FieldName, TSharedPtr<FJsonValue>& NewValue) const;
 
+	bool AddArrayItem(const FString& Path, EJson Format, float ValueNumeric = 0.f, const FString& ValueStr = TEXT(""), bool bValue = false);
+
 public:
 
 	FString AsString() const
@@ -167,6 +169,17 @@ public:
 	{ return SetValue(Path, EJson::Number, Value); };
 	bool SetBooleanValue(const FString& Path, const bool Value)
 	{ return SetValue(Path, EJson::Boolean, 0.f, "", Value); };
+	bool SetArrayValue(const FString& Path, const FString& Value)
+	{ return SetValue(Path, EJson::Array, 0.f, Value); };
+
+	bool AddStringArrayItem(const FString& Path, const FString& Value)
+	{ return AddArrayItem(Path, EJson::String, 0.0f, Value, false); }
+	bool AddFloatArrayItem(const FString& Path, const float Value)
+	{ return AddArrayItem(Path, EJson::Number, Value, TEXT(""), false); }
+	bool AddBooleanArrayItem(const FString& Path, const bool Value)
+	{ return AddArrayItem(Path, EJson::Boolean, 0.0f, TEXT(""), Value); }
+	bool AddObjectArrayItem(const FString& Path, const FString& Value)
+	{ return AddArrayItem(Path, EJson::Object, 0.0f, Value, false); }
 
 	FString GetStringValue(const FString& Path) const;
 	float GetFloatValue(const FString& Path) const;

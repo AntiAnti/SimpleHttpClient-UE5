@@ -97,6 +97,7 @@ protected:
 	int32 LastRequest = INDEX_NONE;
 	// Temp. buffer
 	TArray<uint8> DataBuffer;
+	FString StringBuffer;
 
 #if ENGINE_MINOR_VERSION > 4
 	FHttpRequestStreamDelegateV2 OnStreamChunkReceived;

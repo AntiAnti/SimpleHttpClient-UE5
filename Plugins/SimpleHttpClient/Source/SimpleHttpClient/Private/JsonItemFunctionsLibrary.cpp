@@ -28,19 +28,85 @@ FString UJsonItemFunctionsLibrary::JsonItemToString(const FJsonItem& JsonItem)
 	return JsonItem.AsString();
 }
 
-bool UJsonItemFunctionsLibrary::JsonSetFieldValue_String(UPARAM(Ref) FJsonItem& JsonItem, FString Path, FString Value)
+bool UJsonItemFunctionsLibrary::JsonSetFieldValue_String(FJsonItem& JsonItem, FString Path, FString Value)
 {
 	return JsonItem.SetStringValue(Path, Value);
 }
 
-bool UJsonItemFunctionsLibrary::JsonSetFieldValue_Numeric(UPARAM(Ref) FJsonItem& JsonItem, FString Path, float Value)
+bool UJsonItemFunctionsLibrary::JsonSetFieldValue_Numeric(FJsonItem& JsonItem, FString Path, float Value)
 {
 	return JsonItem.SetFloatValue(Path, Value);
 }
 
-bool UJsonItemFunctionsLibrary::JsonSetFieldValue_Bool(UPARAM(Ref) FJsonItem& JsonItem, FString Path, bool Value)
+bool UJsonItemFunctionsLibrary::JsonSetFieldValue_Bool(FJsonItem& JsonItem, FString Path, bool Value)
 {
 	return JsonItem.SetBooleanValue(Path, Value);
+}
+
+bool UJsonItemFunctionsLibrary::JsonAddArrayItem(FJsonItem& JsonItem, FString Path, const FJsonItem& NewItem)
+{
+	return JsonItem.AddObjectArrayItem(Path, NewItem.AsString());
+}
+
+bool UJsonItemFunctionsLibrary::JsonAddArrayItemString(FJsonItem& JsonItem, FString Path, FString NewItem)
+{
+	return JsonItem.AddStringArrayItem(Path, NewItem);
+}
+
+bool UJsonItemFunctionsLibrary::JsonAddArrayItemNumeric(FJsonItem& JsonItem, FString Path, float NewItem)
+{
+	return JsonItem.AddFloatArrayItem(Path, NewItem);
+}
+
+bool UJsonItemFunctionsLibrary::JsonAddArrayItemBool(FJsonItem& JsonItem, FString Path, bool NewItem)
+{
+	return JsonItem.AddBooleanArrayItem(Path, NewItem);
+}
+
+bool UJsonItemFunctionsLibrary::ExtractJsonBlockFromString(const FString& InText, int32 SearchStart, int32& OutStartPos, int32& OutBlockLen, FJsonItem& OutJson)
+{
+	int32 Depth = 0;
+	int32 Position = SearchStart;
+	int32 PositionStart = INDEX_NONE;
+	int32 PositionEnd = INDEX_NONE;
+
+	while (Position < InText.Len())
+	{
+		int32 OpenPos = InText.Find(TEXT("{"), ESearchCase::IgnoreCase, ESearchDir::FromStart, Position);
+		int32 EndPos = InText.Find(TEXT("}"), ESearchCase::IgnoreCase, ESearchDir::FromStart, Position);
+
+		if ((EndPos != INDEX_NONE && OpenPos != INDEX_NONE && EndPos < OpenPos) || (EndPos != INDEX_NONE && OpenPos == INDEX_NONE))
+		{
+			Depth--; Position = EndPos + 1;
+		}
+		else if ((EndPos != INDEX_NONE && OpenPos != INDEX_NONE && EndPos > OpenPos) || (EndPos == INDEX_NONE && OpenPos != INDEX_NONE))
+		{
+			if (PositionStart == INDEX_NONE) PositionStart = OpenPos;
+			Depth++; Position = OpenPos + 1;
+		}
+
+		if (Depth < 0 || (EndPos == INDEX_NONE && OpenPos == INDEX_NONE))
+		{
+			break;
+		}
+		if (Depth == 0)
+		{
+			PositionEnd = EndPos + 1;
+			break;
+		}
+	}
+
+	if (PositionStart == INDEX_NONE || PositionEnd == INDEX_NONE)
+	{
+		return false;
+	}
+
+	OutStartPos = PositionStart;
+	OutBlockLen = PositionEnd - PositionStart;
+	FString JsonData = InText.Mid(PositionStart, OutBlockLen);
+	OutJson.FromString(JsonData);
+
+	return OutJson.IsValid();
 }
 
 FString UJsonItemFunctionsLibrary::JsonGetFieldValue_String(const FJsonItem& JsonItem, FString Path)
